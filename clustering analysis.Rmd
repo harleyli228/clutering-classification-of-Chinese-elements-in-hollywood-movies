@@ -1,0 +1,160 @@
+---
+title: "Clustering"
+author: "Yuquan Li"
+date: "4/23/2022"
+output: rmarkdown::github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Hierarchical Clustering
+
+```{r}
+library(readxl)
+df <- read_excel(file.choose())
+
+library(tidyverse)  # data manipulation
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering visualization
+library(dendextend) # for comparing two dendrograms
+
+df_cluster <- df[-c(1,2,41,40,39,38,37,36,35,34,30,29)]
+```
+
+## 1. Choose Linkage Method
+
+```{r}
+#define linkage methods
+m <- c( "average", "single", "complete", "ward")
+names(m) <- c( "average", "single", "complete", "ward")
+
+#function to compute agglomerative coefficient
+ac <- function(x) {
+  agnes(df_cluster, method = x)$ac
+}
+
+#calculate agglomerative coefficient for each clustering linkage method
+sapply(m, ac)
+```
+
+We can see that Ward’s minimum variance method produces the highest agglomerative coefficient, thus we’ll use that as the method for our final hierarchical clustering
+
+## 2. Hierarchical clustering using Ward's minimum variance
+```{r}
+clust <- agnes(df_cluster, method = "ward")
+pltree(clust, cex = 0.6, hang = -1, main = "Dendrogram") 
+```
+
+## 3. Determine the optimal number of clusters
+Gap Statistic Method
+```{r}
+#calculate gap statistic for each number of clusters (up to 10 clusters)
+gap_stat <- clusGap(df_cluster, FUN = hcut, nstart = 25, K.max = 10, B = 50)
+fviz_gap_stat(gap_stat) + 
+  geom_vline(xintercept = 4, linetype = 2) +
+  labs(subtitle = "Gap Stat Method")
+
+```
+
+Elbow Method
+```{r}
+fviz_nbclust(df_cluster, FUN = hcut, method = "wss") + 
+  geom_vline(xintercept = 4, linetype = 2) +
+  labs(subtitle = "Elbow Method")
+```
+Average Silhouette Method
+```{r}
+fviz_nbclust(df_cluster, FUN = hcut, method = "silhouette") +
+  geom_vline(xintercept = 3, linetype = 2) +
+  labs(subtitle = "Silhouette Method")
+
+```
+
+Based on the three methods above, we decided to choose to group our observations into 4 distinct clusters.
+
+```{r}
+plot(clust)
+rect.hclust(clust, k = 4, border = 2:5)
+```
+
+## 4. Apply Cluster Labels to Original Dataset
+
+```{r}
+#compute distance matrix
+d <- dist(df_cluster, method = "euclidean")
+
+#perform hierarchical clustering using Ward's method
+final_clust <- hclust(d, method = "ward.D2" )
+
+#cut the dendrogram into 4 clusters
+groups <- cutree(final_clust, k=4)
+
+#find number of observations in each cluster
+table(groups)
+```
+
+Append cluster labels to original data
+
+```{r}
+final_data <- cbind(df, cluster = groups)
+head(final_data)
+
+```
+## 5. Find mean values for each cluster
+
+```{r}
+cluster_summary <- aggregate(final_data, by=list(cluster=final_data$cluster), FUN = mean)
+cluster_summary <- cluster_summary[-c(2,34,35,36,37,38,39,40,41,42,43,44)]
+cluster_summary[c(1,27,26,32,31,30)]
+```
+
+# Analyzing Clusters
+
+* Cluster 1 has both high international box office (2nd highest) and Chinese box office (highest), and second highest review scores (3 platforms);
+* Cluster 2 has the lowest box office both in China and internationally, and the  review scores are the second lowest (3 platforms);
+* Cluster 3 has the second highest box office in China and third highest box office internationally, and the review scores are the lowest both in China and internationally.
+* Cluster 4 has the highest international box office, but second lowest Chinese box office, and the  review scores are the highest both in China and internationally.
+
+```{r}
+library(dplyr)
+data <- final_data[-c(34,35,36,37,38,39,40,41)]
+data$cluster <- factor(data$cluster)
+cluster1<-subset(data, cluster == 1)
+cluster2<-subset(data, cluster == 2)
+cluster3<-subset(data, cluster == 3)
+cluster4<-subset(data, cluster == 4)
+
+```
+
+## 1. International box office vs. Chinese box office
+```{r}
+library(ggplot2)
+ggplot() +
+  geom_point(aes(x=Chinese_box_office_million,y=international_box_office_million,color=cluster),data = data)
+```
+```{r}
+cor(data$Chinese_box_office_million,data$international_box_office_million)
+```
+
+There is no strong relationship between Chinese box office and international box office.
+Cluster 4 performed well internationally and Cluster 4 performed well domestically.
+
+
+## 2. International reviews vs. Chinese revews
+we chose iMDb and douban since they are in the same scale
+```{r}
+ggplot() +
+  geom_point(aes(x=douban,y=iMDb,color=cluster),data = data)
+```
+```{r}
+cor(data$douban,data$iMDb)
+```
+
+Chinese review score and international review score are highly correlated.
+
+
+
+
+
